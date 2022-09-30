@@ -10,7 +10,7 @@ Files called `xlsum-0-to-10...` have their full-text to summary ratio in the int
 
 # HuggingFace dataset
 
-You can grab the .jsonl data from the corresponding HuggingFace dataset here: https://huggingface.co/datasets/TurkuNLP/xlsum-fi/tree/main/data
+The data is released [on the HuggingFace dataset hub](https://huggingface.co/datasets/TurkuNLP/xlsum-fi) and the jsons are directly accessible here: https://huggingface.co/datasets/TurkuNLP/xlsum-fi/tree/main/data
 
 # License and Disclaimer
 
