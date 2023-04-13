@@ -1,53 +1,64 @@
 import sys
 import json
 import docx
-import tqdm
 
-def yield_docs(fnames):
-    for fname in fnames:
-        with open(fname) as inp:
-            for line in inp:
-                doc=json.loads(line)
-                doc["srcfile"]=fname
-                ratio=len(doc["text"])/len(doc["summary"])
-                if ratio<=10.0:
-                    yield(doc)
+from argparse import ArgumentParser
 
-if __name__=="__main__":
-    
-    doc=docx.Document()
-    doc_counter=0
-    current_len=0
-    max_len=950000
 
-    doclist=[]
-    for d_idx, d in tqdm.tqdm(enumerate(yield_docs(sys.argv[1:]))):
-        d_len=len(d["title"])+len(d["summary"])+len(d["text"])+50
-        if (current_len+d_len)>max_len:
-            #Save first!
-            doc.save(f"xlsum-doc-in/xlsum-{doc_counter:05d}.docx")
-            doc_counter+=1
-            current_len=0
-            doc=docx.Document()
+def argparser():
+    ap = ArgumentParser()
+    ap.add_argument('jsonl', help='original-data/databricks-dolly-15k.jsonl')
+    ap.add_argument('--max-len', type=int, default=950000)
+    return ap
+
+
+def yield_data(fname):
+    with open(fname) as inp:
+        for line in inp:
+            yield json.loads(line)
+
+
+def main(argv):
+    args = argparser().parse_args(argv[1:])
+
+    doc = docx.Document()
+    doc_counter = 0
+    current_len = 0
+
+    for d_idx, d in enumerate(yield_data(args.jsonl)):
+        d_len=len(d["instruction"])+len(d["context"])+len(d["response"])+50
+        if (current_len+d_len) > args.max_len:
+            doc.save(f"dolly-doc-in/dolly-{doc_counter:05d}.docx")
+            doc_counter += 1
+            current_len = 0
+            doc = docx.Document()
+
+        pgraph = doc.add_paragraph("")
+
+        r = pgraph.add_run(f"Document {d_idx}")
+        r.bold = True
+        r.underline = True
+
         pgraph=doc.add_paragraph("")
-        r=pgraph.add_run(f"Document number {d_idx}")
-        doclist.append((d["srcfile"],d["id"]))
+        r = pgraph.add_run(f"Instruction")
         r.bold=True
-        r.underline=True
-        pgraph=doc.add_paragraph(d["title"])
-        pgraph=doc.add_paragraph(d["text"])
-        
-        pgraph=doc.add_paragraph("")
-        r=pgraph.add_run(f"Summary")
-        r.bold=True
+        pgraph = doc.add_paragraph(d["instruction"])
 
-        pgraph=doc.add_paragraph(d["summary"])
+        if d["context"] and not d["context"].isspace():
+            pgraph=doc.add_paragraph("")
+            r = pgraph.add_run(f"Context")
+            r.bold=True
+            pgraph = doc.add_paragraph(d["context"])
+
+        pgraph=doc.add_paragraph("")
+        r = pgraph.add_run(f"Response")
+        r.bold=True
+        pgraph = doc.add_paragraph(d["response"])
+
         current_len+=d_len
     else:
-        doc.save(f"xlsum-doc-in/xlsum-{doc_counter:05d}.docx")
-    with open("xlsum-doc-in/z_metadata.json","wt") as f:
-        json.dump(doclist,f)
-        
-        
-            
-        
+        doc.save(f"dolly-doc-in/dolly-{doc_counter:05d}.docx")
+
+
+if __name__=="__main__":
+    sys.exit(main(sys.argv))

@@ -1,63 +1,87 @@
 import docx
 import sys
-import argparse
 import json
 import tqdm
+
+from argparse import ArgumentParser
+
+
+def argparser():
+    ap = ArgumentParser()
+    ap.add_argument('jsonl', help='original-data/databricks-dolly-15k.jsonl')
+    ap.add_argument('docxs', nargs="+", help='All translated docx files in correct order')
+    return ap
+
+
+def load_original_data(fn):
+    data = []
+    with open(fn) as f:
+        for l in f:
+            data.append(json.loads(l))
+    return data
+
 
 def yield_translations(fnames):
     for fname in tqdm.tqdm(fnames):
         d=docx.Document(fname)
 
-        curr_doc=None
+        curr_doc, curr_field = None, None
         for p in d.paragraphs:
-            if p.runs[0].bold and p.text.lower().startswith("asiakirja"):
+            if p.runs[0].bold and p.text.startswith("Asiakirja"):
                 if curr_doc:
                     yield curr_doc
-                curr_doc={"title":None,"text":None,"id":None,"url":""}
-            elif p.runs[0].bold and p.text.lower().startswith("yhteenveto"):
-                #we moved into summary
-                curr_doc["summary"]=None
+                curr_doc={
+                    "instruction": None,
+                    "context": None,
+                    "response": None,
+                    "category": None,
+                }
+                curr_field = None
+            elif p.runs[0].bold and p.text.startswith("Ohjeet"):
+                curr_field = "instruction"
+            elif p.runs[0].bold and p.text.startswith("Konteksti"):
+                curr_field = "context"
+            elif p.runs[0].bold and p.text.startswith("Vastaus"):
+                curr_field = "response"
+            elif p.runs[0].bold:
+                raise ValueError(f'unexpected section: {p.text}')
+            elif p.text.isspace() or not p.text:
+                pass
             else:
-                if not curr_doc["title"]: #that one comes first
-                    curr_doc["title"]=p.text
-                elif "summary" in curr_doc:
-                    #moved into summary already
-                    curr_doc["summary"]=p.text
-                else:
-                    assert not curr_doc["text"] #if this fails it means a document with several paragraphs
-                    curr_doc["text"]=p.text
+                assert curr_field is not None
+                assert curr_doc[curr_field] is None
+                curr_doc[curr_field] = p.text
         else:
             yield curr_doc
-                    
-                
+
+
+def main(argv):
+    args = argparser().parse_args(argv[1:])
+
+    original_data = load_original_data(args.jsonl)
+
+    # confirm sync and copy in category
+    for i, d in enumerate(yield_translations(args.docxs)):
+        o = original_data[i]
+
+        if d['context'] is None:
+            assert o['context'].isspace() or not o['context'], 'desync'
+        else:
+            assert o['context'] and not o['context'].isspace(), 'desync'
+
+        d['category'] = o['category']
+
+        print(json.dumps(d, ensure_ascii=False))
+
+    if i != len(original_data):
+        print(f'''
+##############################################################################
+#
+# WARNING: incomplete: saw {i} translations, original is {len(original_data)}
+#
+##############################################################################
+''', file=sys.stderr)
+
 
 if __name__=="__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--url-data', help='Json with id2url mapping')
-    parser.add_argument('--meta-data', help='Json with metadata created by jsonl2docx')
-    parser.add_argument('DOCXS', nargs="+", help='All translated docx files in their correct order')
-
-    args = parser.parse_args()
-
-    id2url=json.load(open(args.url_data))
-    meta=json.load(open(args.meta_data))
-    
-    all_d=list(yield_translations(args.DOCXS))
-    assert len(all_d)==len(meta)
-
-    train_f,val_f,test_f=open("jsonl-fi/finnish_train.jsonl","wt"),open("jsonl-fi/finnish_val.jsonl","wt"),open("jsonl-fi/finnish_test.jsonl","wt")
-    
-    for (orig_f,origid),d in zip(meta,all_d):
-        d["id"]=origid
-        d["url"]=id2url[origid]
-        line=json.dumps(d,ensure_ascii=False,sort_keys=True)
-        if "train" in orig_f:
-            f=train_f
-        elif "val" in orig_f:
-            f=val_f
-        elif "test" in orig_f:
-            f=test_f
-        else:
-            assert False
-        print(line,file=f)
-        
+    sys.exit(main(sys.argv))
