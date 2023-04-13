@@ -3,6 +3,7 @@ import sys
 import json
 import tqdm
 
+from logging import warning
 from argparse import ArgumentParser
 
 
@@ -22,12 +23,19 @@ def load_original_data(fn):
 
 
 def yield_translations(fnames):
+    expected_doc_idx = 0
+
     for fname in tqdm.tqdm(fnames):
-        d=docx.Document(fname)
+        d = docx.Document(fname)
 
         curr_doc, curr_field = None, None
         for p in d.paragraphs:
-            if p.runs[0].bold and p.text.startswith("Asiakirja"):
+            if p.runs[0].bold and p.text.startswith("Asiakirja "):
+                doc_idx = int(p.text[len("Asiakirja "):])
+                if expected_doc_idx != doc_idx:
+                    warning(f'index mismatch: {expected_doc_idx} != {doc_idx}')
+                expected_doc_idx += 1
+
                 if curr_doc:
                     yield curr_doc
                 curr_doc={
@@ -72,12 +80,13 @@ def main(argv):
         d['category'] = o['category']
 
         print(json.dumps(d, ensure_ascii=False))
+    count = i + 1
 
-    if i != len(original_data):
+    if count != len(original_data):
         print(f'''
 ##############################################################################
 #
-# WARNING: incomplete: saw {i} translations, original is {len(original_data)}
+# WARNING: incomplete: got {count} documents, original is {len(original_data)}
 #
 ##############################################################################
 ''', file=sys.stderr)
